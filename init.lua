@@ -672,7 +672,96 @@ require('lazy').setup({
       --        For example, to see the options for `lua_ls`, you could go to: https://luals.github.io/wiki/settings/
       local servers = {
         -- clangd = {},
-        -- gopls = {},
+        omnisharp = {
+          cmd = {
+            vim.fn.stdpath 'data' .. '/mason/bin/omnisharp',
+            '--languageserver',
+            '--hostPID',
+            tostring(vim.fn.getpid()),
+          },
+
+          -- extended handlers (keep)
+          handlers = {
+            ['textDocument/definition'] = require('omnisharp_extended').handler,
+            ['textDocument/typeDefinition'] = require('omnisharp_extended').type_definition_handler,
+            ['textDocument/references'] = require('omnisharp_extended').references_handler,
+          },
+
+          -- OmniSharp JSON settings ↓
+          settings = {
+            FormattingOptions = { -- docs §FormattingOptions
+              EnableEditorConfigSupport = true,
+              OrganizeImports = true,
+              NewLine = 'auto',
+            },
+
+            MsBuild = { -- speed: parse only what you touch
+              LoadProjectsOnDemand = true,
+            },
+
+            RoslynExtensionsOptions = { -- docs §RoslynExtensionsOptions
+              EnableAnalyzersSupport = true, -- rich diagnostics
+              EnableImportCompletion = true, -- auto-using
+              EnableDecompilationSupport = false, -- RAM saver
+              AnalyzeOpenDocumentsOnly = true, -- perf boost
+              DiagnosticWorkersThreadCount = 4, -- tune for M-series
+              InlayHintsOptions = { -- full hint set
+                EnableForParameters = true,
+                ForLiteralParameters = true,
+                ForIndexerParameters = true,
+                ForObjectCreationParameters = true,
+                ForOtherParameters = true,
+                SuppressForParametersThatMatchMethodIntent = true,
+                SuppressForParametersThatDifferOnlyBySuffix = true,
+                SuppressForParametersThatMatchArgumentName = true,
+                EnableForTypes = true,
+                ForImplicitVariableTypes = true,
+                ForLambdaParameterTypes = true,
+                ForImplicitObjectCreation = true,
+              },
+            },
+
+            -- keep stable SDK; set to true if you use preview .NETs
+            Sdk = { IncludePrereleases = false },
+          },
+        },
+        gopls = {
+          settings = {
+            gopls = {
+              gofumpt = true,
+              codelenses = {
+                gc_details = false,
+                generate = true,
+                regenerate_cgo = true,
+                run_govulncheck = true,
+                test = true,
+                tidy = true,
+                upgrade_dependency = true,
+                vendor = true,
+              },
+              hints = {
+                assignVariableTypes = true,
+                compositeLiteralFields = true,
+                compositeLiteralTypes = true,
+                constantValues = true,
+                functionTypeParameters = true,
+                parameterNames = true,
+                rangeVariableTypes = true,
+              },
+              analyses = {
+                nilness = true,
+                unusedparams = true,
+                unusedwrite = true,
+                useany = true,
+              },
+              usePlaceholders = true,
+              completeUnimported = true,
+              staticcheck = true,
+              directoryFilters = { '-.git', '-.vscode', '-.idea', '-.vscode-test', '-node_modules' },
+              semanticTokens = true,
+            },
+          },
+        },
         -- pyright = {},
         -- rust_analyzer = {},
         -- ... etc. See `:help lspconfig-all` for a list of all the pre-configured LSPs
@@ -716,6 +805,7 @@ require('lazy').setup({
       local ensure_installed = vim.tbl_keys(servers or {})
       vim.list_extend(ensure_installed, {
         'stylua', -- Used to format Lua code
+        'omnisharp',
       })
       require('mason-tool-installer').setup { ensure_installed = ensure_installed }
 
@@ -768,6 +858,8 @@ require('lazy').setup({
       end,
       formatters_by_ft = {
         lua = { 'stylua' },
+        go = { 'goimports', 'gofumpt', 'gci' },
+        csharp = { 'csharpier' },
         -- Conform can also run multiple formatters sequentially
         -- python = { "isort", "black" },
         --
@@ -944,7 +1036,24 @@ require('lazy').setup({
     main = 'nvim-treesitter.configs', -- Sets main module to use for opts
     -- [[ Configure Treesitter ]] See `:help nvim-treesitter`
     opts = {
-      ensure_installed = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' },
+      ensure_installed = {
+        'bash',
+        'c',
+        'diff',
+        'html',
+        'lua',
+        'luadoc',
+        'markdown',
+        'markdown_inline',
+        'query',
+        'vim',
+        'vimdoc',
+        'go',
+        'gomod',
+        'gowork',
+        'gosum',
+        'c_sharp',
+      },
       -- Autoinstall languages that are not installed
       auto_install = true,
       highlight = {
@@ -962,6 +1071,24 @@ require('lazy').setup({
     --    - Incremental selection: Included, see `:help nvim-treesitter-incremental-selection-mod`
     --    - Show your current context: https://github.com/nvim-treesitter/nvim-treesitter-context
     --    - Treesitter + textobjects: https://github.com/nvim-treesitter/nvim-treesitter-textobjects
+  },
+  {
+    'nvim-treesitter/nvim-treesitter-context',
+    opts = function()
+      local tsc = require 'treesitter-context'
+      Snacks.toggle({
+        name = 'Treesitter Context',
+        get = tsc.enabled,
+        set = function(state)
+          if state then
+            tsc.enable()
+          else
+            tsc.disable()
+          end
+        end,
+      }):map '<leader>ut'
+      return { mode = 'cursor', max_lines = 3 }
+    end,
   },
 
   -- The following comments only work if you have downloaded the kickstart repo, not just copy pasted the
@@ -990,6 +1117,680 @@ require('lazy').setup({
   -- Or use telescope!
   -- In normal mode type `<space>sh` then write `lazy.nvim-plugin`
   -- you can continue same window with `<space>sr` which resumes last telescope search
+  {
+    'folke/snacks.nvim',
+    priority = 1000,
+    lazy = false,
+    ---@type snacks.Config
+    opts = {
+      bigfile = { enabled = true },
+      dashboard = { enabled = true },
+      explorer = {
+        enabled = true,
+        hidden = true,
+        ignored = true,
+      },
+      indent = { enabled = true },
+      input = { enabled = true },
+      notifier = {
+        enabled = true,
+        timeout = 3000,
+      },
+      picker = {
+        hidden = true,
+        ignored = true,
+        sources = {
+          files = {
+            hidden = true,
+            ignored = true,
+            -- exclude = {
+            -- "**/.git/*",
+            --},
+          },
+        },
+      },
+      quickfile = { enabled = true },
+      scope = { enabled = true },
+      scroll = { enabled = true },
+      statuscolumn = { enabled = true },
+      words = { enabled = true },
+      styles = {
+        notification = {
+          -- wo = { wrap = true } -- Wrap notifications
+        },
+      },
+    },
+    keys = {
+      -- Top Pickers & Explorer
+      {
+        '<leader><space>',
+        function()
+          Snacks.picker.smart()
+        end,
+        desc = 'Smart Find Files',
+      },
+      {
+        '<leader>,',
+        function()
+          Snacks.picker.buffers()
+        end,
+        desc = 'Buffers',
+      },
+      {
+        '<leader>/',
+        function()
+          Snacks.picker.grep()
+        end,
+        desc = 'Grep',
+      },
+      {
+        '<leader>:',
+        function()
+          Snacks.picker.command_history()
+        end,
+        desc = 'Command History',
+      },
+      {
+        '<leader>n',
+        function()
+          Snacks.picker.notifications()
+        end,
+        desc = 'Notification History',
+      },
+      {
+        '<leader>e',
+        function()
+          Snacks.explorer()
+        end,
+        desc = 'File Explorer',
+      },
+      -- find
+      {
+        '<leader>fb',
+        function()
+          Snacks.picker.buffers()
+        end,
+        desc = 'Buffers',
+      },
+      {
+        '<leader>fc',
+        function()
+          Snacks.picker.files { cwd = vim.fn.stdpath 'config' }
+        end,
+        desc = 'Find Config File',
+      },
+      {
+        '<leader>ff',
+        function()
+          Snacks.picker.files()
+        end,
+        desc = 'Find Files',
+      },
+      {
+        '<leader>fg',
+        function()
+          Snacks.picker.git_files()
+        end,
+        desc = 'Find Git Files',
+      },
+      {
+        '<leader>fp',
+        function()
+          Snacks.picker.projects()
+        end,
+        desc = 'Projects',
+      },
+      {
+        '<leader>fr',
+        function()
+          Snacks.picker.recent()
+        end,
+        desc = 'Recent',
+      },
+      -- git
+      {
+        '<leader>gb',
+        function()
+          Snacks.picker.git_branches()
+        end,
+        desc = 'Git Branches',
+      },
+      {
+        '<leader>gl',
+        function()
+          Snacks.picker.git_log()
+        end,
+        desc = 'Git Log',
+      },
+      {
+        '<leader>gL',
+        function()
+          Snacks.picker.git_log_line()
+        end,
+        desc = 'Git Log Line',
+      },
+      {
+        '<leader>gs',
+        function()
+          Snacks.picker.git_status()
+        end,
+        desc = 'Git Status',
+      },
+      {
+        '<leader>gS',
+        function()
+          Snacks.picker.git_stash()
+        end,
+        desc = 'Git Stash',
+      },
+      {
+        '<leader>gd',
+        function()
+          Snacks.picker.git_diff()
+        end,
+        desc = 'Git Diff (Hunks)',
+      },
+      {
+        '<leader>gf',
+        function()
+          Snacks.picker.git_log_file()
+        end,
+        desc = 'Git Log File',
+      },
+      -- Grep
+      {
+        '<leader>sb',
+        function()
+          Snacks.picker.lines()
+        end,
+        desc = 'Buffer Lines',
+      },
+      {
+        '<leader>sB',
+        function()
+          Snacks.picker.grep_buffers()
+        end,
+        desc = 'Grep Open Buffers',
+      },
+      {
+        '<leader>sg',
+        function()
+          Snacks.picker.grep()
+        end,
+        desc = 'Grep',
+      },
+      {
+        '<leader>sw',
+        function()
+          Snacks.picker.grep_word()
+        end,
+        desc = 'Visual selection or word',
+        mode = { 'n', 'x' },
+      },
+      -- search
+      {
+        '<leader>s"',
+        function()
+          Snacks.picker.registers()
+        end,
+        desc = 'Registers',
+      },
+      {
+        '<leader>s/',
+        function()
+          Snacks.picker.search_history()
+        end,
+        desc = 'Search History',
+      },
+      {
+        '<leader>sa',
+        function()
+          Snacks.picker.autocmds()
+        end,
+        desc = 'Autocmds',
+      },
+      {
+        '<leader>sb',
+        function()
+          Snacks.picker.lines()
+        end,
+        desc = 'Buffer Lines',
+      },
+      {
+        '<leader>sc',
+        function()
+          Snacks.picker.command_history()
+        end,
+        desc = 'Command History',
+      },
+      {
+        '<leader>sC',
+        function()
+          Snacks.picker.commands()
+        end,
+        desc = 'Commands',
+      },
+      {
+        '<leader>sd',
+        function()
+          Snacks.picker.diagnostics()
+        end,
+        desc = 'Diagnostics',
+      },
+      {
+        '<leader>sD',
+        function()
+          Snacks.picker.diagnostics_buffer()
+        end,
+        desc = 'Buffer Diagnostics',
+      },
+      {
+        '<leader>sh',
+        function()
+          Snacks.picker.help()
+        end,
+        desc = 'Help Pages',
+      },
+      {
+        '<leader>sH',
+        function()
+          Snacks.picker.highlights()
+        end,
+        desc = 'Highlights',
+      },
+      {
+        '<leader>si',
+        function()
+          Snacks.picker.icons()
+        end,
+        desc = 'Icons',
+      },
+      {
+        '<leader>sj',
+        function()
+          Snacks.picker.jumps()
+        end,
+        desc = 'Jumps',
+      },
+      {
+        '<leader>sk',
+        function()
+          Snacks.picker.keymaps()
+        end,
+        desc = 'Keymaps',
+      },
+      {
+        '<leader>sl',
+        function()
+          Snacks.picker.loclist()
+        end,
+        desc = 'Location List',
+      },
+      {
+        '<leader>sm',
+        function()
+          Snacks.picker.marks()
+        end,
+        desc = 'Marks',
+      },
+      {
+        '<leader>sM',
+        function()
+          Snacks.picker.man()
+        end,
+        desc = 'Man Pages',
+      },
+      {
+        '<leader>sp',
+        function()
+          Snacks.picker.lazy()
+        end,
+        desc = 'Search for Plugin Spec',
+      },
+      {
+        '<leader>sq',
+        function()
+          Snacks.picker.qflist()
+        end,
+        desc = 'Quickfix List',
+      },
+      {
+        '<leader>sR',
+        function()
+          Snacks.picker.resume()
+        end,
+        desc = 'Resume',
+      },
+      {
+        '<leader>su',
+        function()
+          Snacks.picker.undo()
+        end,
+        desc = 'Undo History',
+      },
+      {
+        '<leader>uC',
+        function()
+          Snacks.picker.colorschemes()
+        end,
+        desc = 'Colorschemes',
+      },
+      -- LSP
+      {
+        'gd',
+        function()
+          Snacks.picker.lsp_definitions()
+        end,
+        desc = 'Goto Definition',
+      },
+      {
+        'gD',
+        function()
+          Snacks.picker.lsp_declarations()
+        end,
+        desc = 'Goto Declaration',
+      },
+      {
+        'gr',
+        function()
+          Snacks.picker.lsp_references()
+        end,
+        nowait = true,
+        desc = 'References',
+      },
+      {
+        'gI',
+        function()
+          Snacks.picker.lsp_implementations()
+        end,
+        desc = 'Goto Implementation',
+      },
+      {
+        'gy',
+        function()
+          Snacks.picker.lsp_type_definitions()
+        end,
+        desc = 'Goto T[y]pe Definition',
+      },
+      {
+        '<leader>ss',
+        function()
+          Snacks.picker.lsp_symbols()
+        end,
+        desc = 'LSP Symbols',
+      },
+      {
+        '<leader>sS',
+        function()
+          Snacks.picker.lsp_workspace_symbols()
+        end,
+        desc = 'LSP Workspace Symbols',
+      },
+      -- Other
+      {
+        '<leader>z',
+        function()
+          Snacks.zen()
+        end,
+        desc = 'Toggle Zen Mode',
+      },
+      {
+        '<leader>Z',
+        function()
+          Snacks.zen.zoom()
+        end,
+        desc = 'Toggle Zoom',
+      },
+      {
+        '<leader>.',
+        function()
+          Snacks.scratch()
+        end,
+        desc = 'Toggle Scratch Buffer',
+      },
+      {
+        '<leader>S',
+        function()
+          Snacks.scratch.select()
+        end,
+        desc = 'Select Scratch Buffer',
+      },
+      {
+        '<leader>n',
+        function()
+          Snacks.notifier.show_history()
+        end,
+        desc = 'Notification History',
+      },
+      {
+        '<leader>bd',
+        function()
+          Snacks.bufdelete()
+        end,
+        desc = 'Delete Buffer',
+      },
+      {
+        '<leader>cR',
+        function()
+          Snacks.rename.rename_file()
+        end,
+        desc = 'Rename File',
+      },
+      {
+        '<leader>gB',
+        function()
+          Snacks.gitbrowse()
+        end,
+        desc = 'Git Browse',
+        mode = { 'n', 'v' },
+      },
+      {
+        '<leader>gg',
+        function()
+          Snacks.lazygit()
+        end,
+        desc = 'Lazygit',
+      },
+      {
+        '<leader>un',
+        function()
+          Snacks.notifier.hide()
+        end,
+        desc = 'Dismiss All Notifications',
+      },
+      {
+        '<c-/>',
+        function()
+          Snacks.terminal()
+        end,
+        desc = 'Toggle Terminal',
+      },
+      {
+        '<c-_>',
+        function()
+          Snacks.terminal()
+        end,
+        desc = 'which_key_ignore',
+      },
+      {
+        ']]',
+        function()
+          Snacks.words.jump(vim.v.count1)
+        end,
+        desc = 'Next Reference',
+        mode = { 'n', 't' },
+      },
+      {
+        '[[',
+        function()
+          Snacks.words.jump(-vim.v.count1)
+        end,
+        desc = 'Prev Reference',
+        mode = { 'n', 't' },
+      },
+      {
+        '<leader>N',
+        desc = 'Neovim News',
+        function()
+          Snacks.win {
+            file = vim.api.nvim_get_runtime_file('doc/news.txt', false)[1],
+            width = 0.6,
+            height = 0.6,
+            wo = {
+              spell = false,
+              wrap = false,
+              signcolumn = 'yes',
+              statuscolumn = ' ',
+              conceallevel = 3,
+            },
+          }
+        end,
+      },
+    },
+    init = function()
+      vim.api.nvim_create_autocmd('User', {
+        pattern = 'VeryLazy',
+        callback = function()
+          -- Setup some globals for debugging (lazy-loaded)
+          _G.dd = function(...)
+            Snacks.debug.inspect(...)
+          end
+          _G.bt = function()
+            Snacks.debug.backtrace()
+          end
+          vim.print = _G.dd -- Override print to use snacks for `:=` command
+
+          -- Create some toggle mappings
+          Snacks.toggle.option('spell', { name = 'Spelling' }):map '<leader>us'
+          Snacks.toggle.option('wrap', { name = 'Wrap' }):map '<leader>uw'
+          Snacks.toggle.option('relativenumber', { name = 'Relative Number' }):map '<leader>uL'
+          Snacks.toggle.diagnostics():map '<leader>ud'
+          Snacks.toggle.line_number():map '<leader>ul'
+          Snacks.toggle.option('conceallevel', { off = 0, on = vim.o.conceallevel > 0 and vim.o.conceallevel or 2 }):map '<leader>uc'
+          Snacks.toggle.treesitter():map '<leader>uT'
+          Snacks.toggle.option('background', { off = 'light', on = 'dark', name = 'Dark Background' }):map '<leader>ub'
+          Snacks.toggle.inlay_hints():map '<leader>uh'
+          Snacks.toggle.indent():map '<leader>ug'
+          Snacks.toggle.dim():map '<leader>uD'
+        end,
+      })
+    end,
+  },
+  {
+    'zbirenbaum/copilot.lua',
+    cmd = 'Copilot',
+    build = ':Copilot auth',
+    event = 'BufReadPost',
+    opts = {
+      suggestion = {
+        enabled = not vim.g.ai_cmp,
+        auto_trigger = true,
+        hide_during_completion = vim.g.ai_cmp,
+        keymap = {
+          accept = '<Tab>',
+          next = '<M-]>',
+          prev = '<M-[>',
+        },
+      },
+      panel = { enabled = false },
+      filetypes = {
+        markdown = true,
+        help = true,
+      },
+    },
+  },
+  {
+    'CopilotC-Nvim/CopilotChat.nvim',
+    branch = 'main',
+    cmd = 'CopilotChat',
+    opts = function()
+      local user = vim.env.USER or 'User'
+      user = user:sub(1, 1):upper() .. user:sub(2)
+      return {
+        auto_insert_mode = true,
+        question_header = '  ' .. user .. ' ',
+        answer_header = '  Copilot ',
+        window = {
+          width = 0.4,
+        },
+      }
+    end,
+    keys = {
+      { '<c-s>', '<CR>', ft = 'copilot-chat', desc = 'Submit Prompt', remap = true },
+      { '<leader>a', '', desc = '+ai', mode = { 'n', 'v' } },
+      {
+        '<leader>aa',
+        function()
+          return require('CopilotChat').toggle()
+        end,
+        desc = 'Toggle (CopilotChat)',
+        mode = { 'n', 'v' },
+      },
+      {
+        '<leader>ax',
+        function()
+          return require('CopilotChat').reset()
+        end,
+        desc = 'Clear (CopilotChat)',
+        mode = { 'n', 'v' },
+      },
+      {
+        '<leader>aq',
+        function()
+          vim.ui.input({
+            prompt = 'Quick Chat: ',
+          }, function(input)
+            if input ~= '' then
+              require('CopilotChat').ask(input)
+            end
+          end)
+        end,
+        desc = 'Quick Chat (CopilotChat)',
+        mode = { 'n', 'v' },
+      },
+      {
+        '<leader>ap',
+        function()
+          require('CopilotChat').select_prompt()
+        end,
+        desc = 'Prompt Actions (CopilotChat)',
+        mode = { 'n', 'v' },
+      },
+    },
+    config = function(_, opts)
+      local chat = require 'CopilotChat'
+
+      vim.api.nvim_create_autocmd('BufEnter', {
+        pattern = 'copilot-chat',
+        callback = function()
+          vim.opt_local.relativenumber = false
+          vim.opt_local.number = false
+        end,
+      })
+
+      chat.setup(opts)
+    end,
+  },
+  {
+    'ray-x/go.nvim',
+    dependencies = { -- optional packages
+      'ray-x/guihua.lua',
+      'neovim/nvim-lspconfig',
+      'nvim-treesitter/nvim-treesitter',
+    },
+    config = function()
+      require('go').setup()
+    end,
+    event = { 'CmdlineEnter' },
+    ft = { 'go', 'gomod' },
+    build = ':lua require("go.install").update_all_sync()', -- if you need to install/update all binaries
+  },
+
+  {
+    'Hoffs/omnisharp-extended-lsp.nvim',
+    ft = 'cs',
+    dependencies = { 'williamboman/mason-lspconfig.nvim' },
+  },
 }, {
   ui = {
     -- If you are using a Nerd Font: set icons to an empty table which will use the
