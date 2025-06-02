@@ -93,6 +93,12 @@ vim.g.maplocalleader = ' '
 -- Set to true if you have a Nerd Font installed and selected in the terminal
 vim.g.have_nerd_font = false
 
+-- Disable unused providers to reduce warnings and improve startup time
+vim.g.loaded_perl_provider = 0
+vim.g.loaded_node_provider = 0
+vim.g.loaded_python3_provider = 0
+vim.g.loaded_ruby_provider = 0
+
 -- [[ Setting options ]]
 -- See `:help vim.o`
 -- NOTE: You can change these options as you wish!
@@ -219,6 +225,181 @@ vim.api.nvim_create_autocmd('TextYankPost', {
   end,
 })
 
+-- Set LSP log level to reduce log size and improve performance
+vim.lsp.set_log_level('ERROR')
+
+-- Clean up large LSP log file on startup
+vim.defer_fn(function()
+  local log_path = vim.lsp.get_log_path()
+  local stat = vim.loop.fs_stat(log_path)
+  if stat and stat.size > 50 * 1024 * 1024 then -- If log > 50MB
+    vim.fn.writefile({}, log_path) -- Clear the log
+    vim.notify('Cleared large LSP log file (' .. math.floor(stat.size / 1024 / 1024) .. 'MB)', vim.log.levels.INFO)
+  end
+end, 100)
+
+-- C# specific autocommands
+vim.api.nvim_create_autocmd('FileType', {
+  pattern = 'cs',
+  group = vim.api.nvim_create_augroup('csharp-settings', { clear = true }),
+  callback = function(args)
+    -- Set C# specific options
+    vim.opt_local.tabstop = 4
+    vim.opt_local.shiftwidth = 4
+    vim.opt_local.expandtab = true
+    vim.opt_local.commentstring = '// %s'
+  end,
+})
+
+
+
+-- OmniSharp utility commands
+vim.api.nvim_create_user_command('OmniSharpRestart', function()
+  vim.cmd('LspRestart omnisharp')
+  vim.notify('OmniSharp restarted', vim.log.levels.INFO)
+end, { desc = 'Restart OmniSharp language server' })
+
+vim.api.nvim_create_user_command('OmniSharpStatus', function()
+  local clients = vim.lsp.get_clients({ name = 'omnisharp' })
+  if #clients > 0 then
+    local client = clients[1]
+    vim.notify(string.format('OmniSharp is running (ID: %d, PID: %s)',
+      client.id, client.config.cmd and client.config.cmd[4] or 'unknown'), vim.log.levels.INFO)
+  else
+    vim.notify('OmniSharp is not running', vim.log.levels.WARN)
+  end
+end, { desc = 'Check OmniSharp status' })
+
+vim.api.nvim_create_user_command('OmniSharpLog', function()
+  vim.cmd('LspLog omnisharp')
+end, { desc = 'Show OmniSharp logs' })
+
+-- C# project utilities
+vim.api.nvim_create_user_command('CSharpBuild', function()
+  local root = vim.fn.getcwd()
+  vim.fn.system('dotnet build ' .. root)
+  vim.notify('C# project build completed', vim.log.levels.INFO)
+end, { desc = 'Build C# project' })
+
+vim.api.nvim_create_user_command('CSharpTest', function()
+  local root = vim.fn.getcwd()
+  vim.fn.system('dotnet test ' .. root)
+  vim.notify('C# tests completed', vim.log.levels.INFO)
+end, { desc = 'Run C# tests' })
+
+vim.api.nvim_create_user_command('OmniSharpDiag', function()
+  local clients = vim.lsp.get_clients({ name = 'omnisharp' })
+  local log_path = vim.lsp.get_log_path()
+  local stat = vim.loop.fs_stat(log_path)
+  local log_size = stat and math.floor(stat.size / 1024 / 1024) or 0
+  
+  local status = {
+    'OmniSharp Diagnostic Report:',
+    '============================',
+    'Clients: ' .. #clients .. (#clients > 0 and ' (running)' or ' (not running)'),
+    'LSP log size: ' .. log_size .. 'MB',
+  }
+  
+  if #clients > 0 then
+    local client = clients[1]
+    table.insert(status, 'Client ID: ' .. client.id)
+    table.insert(status, 'Root directory: ' .. (client.config.root_dir or 'unknown'))
+    table.insert(status, 'Attached buffers: ' .. #vim.lsp.get_buffers_by_client_id(client.id))
+  end
+  
+  -- Check for omnisharp executable
+  local omnisharp_exists = vim.fn.executable('omnisharp') == 1
+  table.insert(status, 'OmniSharp executable: ' .. (omnisharp_exists and 'found' or 'not found'))
+  
+  -- Check current file type
+  local current_ft = vim.bo.filetype
+  table.insert(status, 'Current filetype: ' .. current_ft)
+  
+  vim.notify(table.concat(status, '\n'), vim.log.levels.INFO)
+end, { desc = 'Check OmniSharp status and performance' })
+
+vim.api.nvim_create_user_command('OmniSharpCleanLog', function()
+  local log_path = vim.lsp.get_log_path()
+  vim.fn.writefile({}, log_path)
+  vim.notify('LSP log cleared', vim.log.levels.INFO)
+end, { desc = 'Clean LSP log file' })
+
+vim.api.nvim_create_user_command('BlinkBuild', function()
+  vim.notify('Building blink.cmp fuzzy library...', vim.log.levels.INFO)
+  vim.fn.system('cd ' .. vim.fn.stdpath('data') .. '/lazy/blink.cmp && cargo build --release')
+  vim.notify('Blink.cmp fuzzy library built', vim.log.levels.INFO)
+end, { desc = 'Build blink.cmp fuzzy library' })
+
+-- Nethermind project specific commands
+vim.api.nvim_create_user_command('NethermindBuild', function()
+  local root = vim.fn.getcwd()
+  vim.notify('Building Nethermind project (this may take a while)...', vim.log.levels.INFO)
+  vim.fn.system('cd ' .. root .. ' && dotnet build --configuration Debug')
+  vim.notify('Nethermind build completed', vim.log.levels.INFO)
+end, { desc = 'Build Nethermind project with analyzers' })
+
+vim.api.nvim_create_user_command('NethermindClean', function()
+  local root = vim.fn.getcwd()
+  vim.notify('Cleaning Nethermind artifacts...', vim.log.levels.INFO)
+  vim.fn.system('cd ' .. root .. ' && dotnet clean && rm -rf artifacts/')
+  vim.notify('Nethermind artifacts cleaned', vim.log.levels.INFO)
+end, { desc = 'Clean Nethermind build artifacts' })
+
+vim.api.nvim_create_user_command('OmniSharpFixNethermind', function()
+  -- Restart OmniSharp with analyzer errors ignored
+  vim.cmd('LspRestart omnisharp')
+  vim.notify('OmniSharp restarted with analyzer errors ignored', vim.log.levels.INFO)
+end, { desc = 'Restart OmniSharp ignoring Nethermind analyzer errors' })
+
+vim.api.nvim_create_user_command('SetupOmniSharpConfig', function()
+  local config_dir = vim.fn.getcwd() .. '/.omnisharp'
+  local config_file = config_dir .. '/omnisharp.json'
+  
+  -- Create .omnisharp directory if it doesn't exist
+  vim.fn.mkdir(config_dir, 'p')
+  
+  -- OmniSharp configuration optimized for Nethermind project
+  local config = {
+    MsBuild = {
+      LoadProjectsOnDemand = true,
+      SkipUnrecognizedProjects = true,
+      ContinueOnError = true,
+    },
+    RoslynExtensionsOptions = {
+      EnableAnalyzersSupport = false,
+      EnableImportCompletion = false,
+      EnableDecompilationSupport = false,
+      AnalyzeOpenDocumentsOnly = true,
+      DiagnosticWorkersThreadCount = 2,
+    },
+    FormattingOptions = {
+      EnableEditorConfigSupport = true,
+      OrganizeImports = false,
+    },
+    Sdk = {
+      IncludePrereleases = false,
+    },
+    FileOptions = {
+      SystemExcludeSearchPatterns = {
+        "**/bin/**",
+        "**/obj/**",
+        "**/artifacts/**",
+        "**/packages/**",
+        "**/.git/**",
+        "**/node_modules/**"
+      },
+      ExcludeSearchPatterns = {
+        "**/Nethermind.Serialization.SszGenerator/**",
+        "**/artifacts/**"
+      }
+    }
+  }
+  
+  -- Write config to file
+  vim.fn.writefile({vim.fn.json_encode(config)}, config_file)
+  vim.notify('Created .omnisharp/omnisharp.json - restart OmniSharp to apply', vim.log.levels.INFO)
+end, { desc = 'Setup omnisharp.json for Nethermind project' })
+
 -- [[ Install `lazy.nvim` plugin manager ]]
 --    See `:help lazy.nvim.txt` or https://github.com/folke/lazy.nvim for more info
 local lazypath = vim.fn.stdpath 'data' .. '/lazy/lazy.nvim'
@@ -298,7 +479,7 @@ require('lazy').setup({
   -- Then, because we use the `opts` key (recommended), the configuration runs
   -- after the plugin has been loaded as `require(MODULE).setup(opts)`.
 
-  { -- Useful plugin to show you pending keybinds.
+  {                     -- Useful plugin to show you pending keybinds.
     'folke/which-key.nvim',
     event = 'VimEnter', -- Sets the loading event to 'VimEnter'
     opts = {
@@ -379,7 +560,7 @@ require('lazy').setup({
       { 'nvim-telescope/telescope-ui-select.nvim' },
 
       -- Useful for getting pretty icons, but requires a Nerd Font.
-      { 'nvim-tree/nvim-web-devicons', enabled = vim.g.have_nerd_font },
+      { 'nvim-tree/nvim-web-devicons',            enabled = vim.g.have_nerd_font },
     },
     config = function()
       -- Telescope is a fuzzy finder that comes with a lot of different things that
@@ -487,7 +668,7 @@ require('lazy').setup({
       'WhoIsSethDaniel/mason-tool-installer.nvim',
 
       -- Useful status updates for LSP.
-      { 'j-hui/fidget.nvim', opts = {} },
+      { 'j-hui/fidget.nvim',    opts = {} },
 
       -- Allows extra capabilities provided by blink.cmp
       'saghen/blink.cmp',
@@ -616,12 +797,20 @@ require('lazy').setup({
 
           -- The following code creates a keymap to toggle inlay hints in your
           -- code, if the language server you are using supports them
-          --
-          -- This may be unwanted, since they displace some of your code
           if client and client_supports_method(client, vim.lsp.protocol.Methods.textDocument_inlayHint, event.buf) then
+            -- turn hints ON as soon as the server attaches
+            vim.lsp.inlay_hint.enable(true, { bufnr = event.buf })
+
+            -- map <leader>th to toggle per-buffer
             map('<leader>th', function()
-              vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled { bufnr = event.buf })
+              local enabled = vim.lsp.inlay_hint.is_enabled { bufnr = event.buf }
+              vim.lsp.inlay_hint.enable(not enabled, { bufnr = event.buf })
             end, '[T]oggle Inlay [H]ints')
+          end
+
+          -- C# specific keymaps
+          if client and client.name == 'omnisharp' then
+            map('<leader>cr', '<cmd>LspRestart omnisharp<cr>', '[C]# [R]estart OmniSharp')
           end
         end,
       })
@@ -655,12 +844,6 @@ require('lazy').setup({
         },
       }
 
-      -- LSP servers and clients are able to communicate to each other what features they support.
-      --  By default, Neovim doesn't support everything that is in the LSP specification.
-      --  When you add blink.cmp, luasnip, etc. Neovim now has *more* capabilities.
-      --  So, we create new capabilities with blink.cmp, and then broadcast that to the servers.
-      local capabilities = require('blink.cmp').get_lsp_capabilities()
-
       -- Enable the following language servers
       --  Feel free to add/remove any LSPs that you want here. They will automatically be installed.
       --
@@ -673,39 +856,33 @@ require('lazy').setup({
       local servers = {
         -- clangd = {},
         omnisharp = {
-          cmd = {
-            vim.fn.stdpath 'data' .. '/mason/bin/omnisharp',
-            '--languageserver',
-            '--hostPID',
-            tostring(vim.fn.getpid()),
-          },
+          cmd = { 'omnisharp', '--languageserver' },
+          
+          -- Simplified startup
+          autostart = true,
+          single_file_support = true,
 
-          -- extended handlers (keep)
-          handlers = {
-            ['textDocument/definition'] = require('omnisharp_extended').handler,
-            ['textDocument/typeDefinition'] = require('omnisharp_extended').type_definition_handler,
-            ['textDocument/references'] = require('omnisharp_extended').references_handler,
-          },
-
-          -- OmniSharp JSON settings ↓
+          -- Simplified settings for better performance
           settings = {
-            FormattingOptions = { -- docs §FormattingOptions
+            FormattingOptions = {
               EnableEditorConfigSupport = true,
-              OrganizeImports = true,
-              NewLine = 'auto',
+              OrganizeImports = false, -- Disabled for performance
             },
 
-            MsBuild = { -- speed: parse only what you touch
-              LoadProjectsOnDemand = true,
+            MsBuild = {
+              LoadProjectsOnDemand = true, -- Critical for performance
+              SkipUnrecognizedProjects = true, -- Skip projects that can't be loaded
+              ContinueOnError = true, -- Don't fail on missing analyzers
             },
 
-            RoslynExtensionsOptions = { -- docs §RoslynExtensionsOptions
-              EnableAnalyzersSupport = true, -- rich diagnostics
-              EnableImportCompletion = true, -- auto-using
-              EnableDecompilationSupport = false, -- RAM saver
-              AnalyzeOpenDocumentsOnly = true, -- perf boost
-              DiagnosticWorkersThreadCount = 4, -- tune for M-series
-              InlayHintsOptions = { -- full hint set
+            RoslynExtensionsOptions = {
+              EnableAnalyzersSupport = false, -- Disabled for performance and to avoid missing analyzer errors
+              EnableImportCompletion = false, -- Disabled for performance
+              EnableDecompilationSupport = false,
+              AnalyzeOpenDocumentsOnly = true,
+              DiagnosticWorkersThreadCount = 2, -- Reduced for better stability
+              LocationPaths = nil, -- Clear analyzer paths to avoid missing file errors
+              InlayHintsOptions = {
                 EnableForParameters = true,
                 ForLiteralParameters = true,
                 ForIndexerParameters = true,
@@ -721,16 +898,31 @@ require('lazy').setup({
               },
             },
 
-            -- keep stable SDK; set to true if you use preview .NETs
-            Sdk = { IncludePrereleases = false },
+            Sdk = {
+              IncludePrereleases = false,
+            },
+            
+            -- Handle missing analyzers gracefully
+            AnalyzerConfig = {
+              IgnoreMissingAnalyzers = true,
+            },
           },
+
+          init_options = {
+            AutomaticWorkspaceInit = true,
+          },
+
+          -- Faster root detection
+          root_dir = function(fname)
+            return require('lspconfig.util').root_pattern('*.sln', '*.csproj')(fname)
+          end,
         },
         gopls = {
           settings = {
             gopls = {
               gofumpt = true,
               codelenses = {
-                gc_details = false,
+                gc_details = true,
                 generate = true,
                 regenerate_cgo = true,
                 run_govulncheck = true,
@@ -738,6 +930,7 @@ require('lazy').setup({
                 tidy = true,
                 upgrade_dependency = true,
                 vendor = true,
+                vulncheck = true,
               },
               hints = {
                 assignVariableTypes = true,
@@ -753,17 +946,81 @@ require('lazy').setup({
                 unusedparams = true,
                 unusedwrite = true,
                 useany = true,
+                modernize = true,
+                shadow = true,
+                unusedvariable = true,
               },
               usePlaceholders = true,
               completeUnimported = true,
               staticcheck = true,
               directoryFilters = { '-.git', '-.vscode', '-.idea', '-.vscode-test', '-node_modules' },
               semanticTokens = true,
+              vulncheck = 'Imports',
             },
           },
         },
         -- pyright = {},
-        -- rust_analyzer = {},
+        rust_analyzer = {
+          settings = {
+            ['rust-analyzer'] = {
+              cargo = {
+                allFeatures = true,
+                loadOutDirsFromCheck = true,
+                buildScripts = {
+                  enable = true,
+                },
+              },
+              -- Add clippy lints for Rust.
+              checkOnSave = true,
+              check = {
+                allFeatures = true,
+                command = 'clippy',
+                extraArgs = { '--no-deps' },
+              },
+              procMacro = {
+                enable = true,
+                ignored = {
+                  ['async-trait'] = { 'async_trait' },
+                  ['napi-derive'] = { 'napi' },
+                  ['async-recursion'] = { 'async_recursion' },
+                },
+              },
+              -- Inlay hints
+              inlayHints = {
+                bindingModeHints = {
+                  enable = false,
+                },
+                chainingHints = {
+                  enable = true,
+                },
+                closingBraceHints = {
+                  enable = true,
+                  minLines = 25,
+                },
+                closureReturnTypeHints = {
+                  enable = 'never',
+                },
+                lifetimeElisionHints = {
+                  enable = 'never',
+                  useParameterNames = false,
+                },
+                maxLength = 25,
+                parameterHints = {
+                  enable = true,
+                },
+                reborrowHints = {
+                  enable = 'never',
+                },
+                renderColons = true,
+                typeHints = {
+                  enable = true,
+                  hideClosureInitialization = false,
+                  hideNamedConstructor = false,
+                },
+              },
+            },
+          },
+        },
         -- ... etc. See `:help lspconfig-all` for a list of all the pre-configured LSPs
         --
         -- Some languages (like typescript) have entire language plugins that can be useful:
@@ -789,6 +1046,11 @@ require('lazy').setup({
         },
       }
 
+      ---@type MasonLspconfigSettings
+      ---@diagnostic disable-next-line: missing-fields
+      require('mason-lspconfig').setup {
+        automatic_enable = vim.tbl_keys(servers or {}),
+      }
       -- Ensure the servers and tools above are installed
       --
       -- To check the current status of installed tools and/or manually install
@@ -804,25 +1066,34 @@ require('lazy').setup({
       -- for you, so that they are available from within Neovim.
       local ensure_installed = vim.tbl_keys(servers or {})
       vim.list_extend(ensure_installed, {
-        'stylua', -- Used to format Lua code
-        'omnisharp',
+        'stylua',    -- Used to format Lua code
+        'omnisharp', -- C# language server
       })
       require('mason-tool-installer').setup { ensure_installed = ensure_installed }
 
-      require('mason-lspconfig').setup {
-        ensure_installed = {}, -- explicitly set to an empty table (Kickstart populates installs via mason-tool-installer)
-        automatic_installation = false,
-        handlers = {
-          function(server_name)
-            local server = servers[server_name] or {}
-            -- This handles overriding only values explicitly passed
-            -- by the server configuration above. Useful when disabling
-            -- certain features of an LSP (for example, turning off formatting for ts_ls)
-            server.capabilities = vim.tbl_deep_extend('force', {}, capabilities, server.capabilities or {})
-            require('lspconfig')[server_name].setup(server)
-          end,
-        },
-      }
+      -- LSP servers and clients are able to communicate to each other what features they support.
+      --  By default, Neovim doesn't support everything that is in the LSP specification.
+      --  When you add nvim-cmp, luasnip, etc. Neovim now has *more* capabilities.
+      --  So, we create new capabilities with nvim cmp, and then broadcast that to the servers.
+      local capabilities = require('blink.cmp').get_lsp_capabilities()
+
+      -- Setup all LSP servers consistently
+      for server_name, config in pairs(servers) do
+        local setup_config = vim.tbl_deep_extend('force', {
+          capabilities = capabilities,
+        }, config)
+
+        -- Setup all servers the same way
+        local ok, err = pcall(function()
+          require('lspconfig')[server_name].setup(setup_config)
+        end)
+        if not ok then
+          vim.notify('Failed to setup ' .. server_name .. ': ' .. tostring(err), vim.log.levels.ERROR)
+        end
+      end
+
+      -- NOTE: Some servers may require an old setup until they are updated. For the full list refer here: https://github.com/neovim/nvim-lspconfig/issues/3705
+      -- These servers will have to be manually set up with require("lspconfig").server_name.setup{}
     end,
   },
 
@@ -860,6 +1131,7 @@ require('lazy').setup({
         lua = { 'stylua' },
         go = { 'goimports', 'gofumpt', 'gci' },
         csharp = { 'csharpier' },
+        json = { 'prettier' },
         -- Conform can also run multiple formatters sequentially
         -- python = { "isort", "black" },
         --
@@ -981,6 +1253,7 @@ require('lazy').setup({
         styles = {
           comments = { italic = false }, -- Disable italics in comments
         },
+        transparent = true,
       }
 
       -- Load the colorscheme here.
@@ -991,7 +1264,7 @@ require('lazy').setup({
   },
 
   -- Highlight todo, notes, etc in comments
-  { 'folke/todo-comments.nvim', event = 'VimEnter', dependencies = { 'nvim-lua/plenary.nvim' }, opts = { signs = false } },
+  { 'folke/todo-comments.nvim', event = 'VimEnter',                                                 dependencies = { 'nvim-lua/plenary.nvim' }, opts = { signs = false } },
 
   { -- Collection of various small independent plugins/modules
     'echasnovski/mini.nvim',
@@ -1129,6 +1402,7 @@ require('lazy').setup({
         enabled = true,
         hidden = true,
         ignored = true,
+        transparent = true,
       },
       indent = { enabled = true },
       input = { enabled = true },
@@ -1683,9 +1957,9 @@ require('lazy').setup({
     event = 'BufReadPost',
     opts = {
       suggestion = {
-        enabled = not vim.g.ai_cmp,
+        enabled = true,
         auto_trigger = true,
-        hide_during_completion = vim.g.ai_cmp,
+        hide_during_completion = true,
         keymap = {
           accept = '<Tab>',
           next = '<M-]>',
@@ -1702,73 +1976,203 @@ require('lazy').setup({
   {
     'CopilotC-Nvim/CopilotChat.nvim',
     branch = 'main',
-    cmd = 'CopilotChat',
+    build = 'make tiktoken', -- ⚡ compile token counter
+    event = 'VeryLazy',      -- lazy-load on demand
+    dependencies = {
+      { 'zbirenbaum/copilot.lua' },
+      { 'nvim-lua/plenary.nvim' }, -- async helpers
+    },
     opts = function()
-      local user = vim.env.USER or 'User'
-      user = user:sub(1, 1):upper() .. user:sub(2)
+      local you = (vim.env.USER or 'User'):gsub('^.', string.upper)
+
       return {
-        auto_insert_mode = true,
-        question_header = '  ' .. user .. ' ',
+        --------------------------------------------------------------------------------
+        -- UI
+        --------------------------------------------------------------------------------
+        window = { border = 'rounded', width = 0.45, height = 0.65 },
+        auto_insert_mode = false, -- stay in normal mode for speed
+        question_header = '  ' .. you .. ' ',
         answer_header = '  Copilot ',
-        window = {
-          width = 0.4,
+
+        contexts = {
+          ---------------------------------------------------------------------------
+          --  #arb  → Arbitrum docs (local clone in ~/docs/arbitrum)
+          ---------------------------------------------------------------------------
+          arb = {
+            resolve = function(input)
+              -- lazy-require inside the callback (path is ready now)
+              local ok, search = pcall(require, 'CopilotChat.search')
+              if not ok then
+                return {}
+              end -- fail-safe
+
+              local hits = search.grep {
+                dir = vim.fn.expand '~/docs/arbitrum',
+                query = (input ~= '' and input) or '.', -- "." = match all
+                lines_before = 2,
+                lines_after = 2,
+                max = 40,
+              }
+
+              if #hits == 0 then
+                return {}
+              end
+              return {
+                {
+                  content = table.concat(hits, '\n'),
+                  filename = 'arbitrum_docs',
+                  filetype = 'markdown',
+                },
+              }
+            end,
+          },
+
+          ---------------------------------------------------------------------------
+          --  #nm  → Nethermind docs (local clone in ~/docs/nethermind)
+          ---------------------------------------------------------------------------
+          nm = {
+            resolve = function(input)
+              local ok, search = pcall(require, 'CopilotChat.search')
+              if not ok then
+                return {}
+              end
+
+              local hits = search.grep {
+                dir = vim.fn.expand '~/docs/nethermind',
+                query = (input ~= '' and input) or '.',
+                lines_before = 2,
+                lines_after = 2,
+                max = 40,
+              }
+
+              if #hits == 0 then
+                return {}
+              end
+              return {
+                {
+                  content = table.concat(hits, '\n'),
+                  filename = 'nethermind_docs',
+                  filetype = 'markdown',
+                },
+              }
+            end,
+          },
         },
+
+        --------------------------------------------------------------------------------
+        -- LLM defaults
+        --------------------------------------------------------------------------------
+        model = 'claude-sonnet-4',
+        sticky = {
+          '#git:staged',
+          '#arb',
+          '#nm',
+        },
+
+        --------------------------------------------------------------------------------
+        -- Prompt templates
+        --------------------------------------------------------------------------------
+        prompts = {
+          -- built-ins we still want
+          Explain = require('CopilotChat.config.prompts').Explain,
+          Review = require('CopilotChat.config.prompts').Review,
+          Optimize = require('CopilotChat.config.prompts').Optimize,
+          Tests = require('CopilotChat.config.prompts').Tests,
+          Commit = require('CopilotChat.config.prompts').Commit,
+
+          -- Daniil-flavoured extras
+          ['RustIdiomatic'] = {
+            prompt = 'Rewrite the selection using idiomatic, zero-cost Rust. \
+Highlight ownership & lifetimes where relevant.',
+            system_prompt = 'You are a senior Rust engineer.',
+            mapping = '<leader>ar',
+            description = 'Rewrite as idiomatic Rust',
+          },
+
+          GoIdiomatic = {
+            prompt =
+            [[Rewrite the selection in idiomatic **Go 1.24** suitable for high-performance blockchain and systems work:
+
+• Keep it simple and explicit; avoid over-engineering.
+• Eliminate heap allocations: reuse slices and buffers, consider sync.Pool, bytes.Buffer.
+• Apply generics only when they remove duplication without hidden costs.
+• Embrace Go’s concurrency model: goroutines, channels, select, context cancellation; avoid blocking I/O in goroutines.
+• Follow Effective Go / Uber style naming and error-handling (wrap with %w, guard-clauses).
+• Export only what’s necessary; keep APIs minimal and testable.
+
+Return **only** the rewritten Go code block and explanation of the changes.]],
+            system_prompt =
+            'You are a senior Go systems engineer who contributes to Nethermind and other high-throughput blockchain clients.',
+            mapping = '<leader>ag',
+            description = 'Rewrite as idiomatic Go',
+          },
+
+          CSharpIdiomatic = {
+            prompt = [[Rewrite the selection in idiomatic **C# 12** using Nethermind
+and .NET runtime best-practices:
+• PascalCase types / camelCase locals, explicit access modifiers
+• Primary constructor syntax where appropriate
+• Expression-bodied members where they add clarity
+• Minimise allocations (Span<T>, ref structs, ValueTask, pooled buffers; no LINQ in hot paths)
+• Fail-fast guard clauses & early returns
+• Nullable reference annotations and "using static" where useful
+Return **only** the rewritten C# code block and explanation of the changes.]],
+            system_prompt =
+            'You are a senior C# engineer who worked on high-performance blockchain clients like Nethermind.',
+            mapping = '<leader>as',
+            description = 'Rewrite as idiomatic C#',
+          },
+          ExplainCSharpForGo = {
+            prompt = [[
+Your job is to **download into my brain everything important and applicable to understanding the C# code below**.
+Assume I’m an expert Go engineer who knows goroutines, channels, `context`, `sync`, and zero-allocation patterns.
+
+* Ignore superficial facts, generalities, and obviousness.
+* Give me **pure substance, deep logic, real mechanics** I can apply right away.
+* Explain each construct through a **Go-lens analogy** (e.g. `async/await` ↔ goroutines + channels, `Span<T>` ↔ `[]byte` slicing).
+* Highlight performance implications, concurrency models, memory allocation, and error-handling differences.
+* Structure the output like the inner monologue of a super-intelligent practitioner:
+  1. **Big-picture purpose** (1–2 sentences).
+  2. **Step-by-step walk-through** (bullet list tied to line numbers).
+  3. **Go parallels & pitfalls** (table or list).
+  4. **Rules & frameworks** for translating this pattern into idiomatic Go.
+  5. **Diagrams / flowcharts** in ASCII where useful.
+* End with a one-line “This is it” takeaway.
+
+Return **only** the explanation (no rewritten code).]],
+            system_prompt =
+            'You are a world-class C# architect who regularly mentors seasoned Go developers transitioning to .NET.',
+            mapping = '<leader>ae',
+            description = 'Explain C# code for a Go dev',
+          },
+        },
+
+        --------------------------------------------------------------------------------
+        -- Picker backend – you already have telescope-ui-select set up
+        --------------------------------------------------------------------------------
+        picker = 'telescope',
       }
     end,
+
+    -- global keymaps (silent by default)
     keys = {
-      { '<c-s>', '<CR>', ft = 'copilot-chat', desc = 'Submit Prompt', remap = true },
-      { '<leader>a', '', desc = '+ai', mode = { 'n', 'v' } },
-      {
-        '<leader>aa',
-        function()
-          return require('CopilotChat').toggle()
-        end,
-        desc = 'Toggle (CopilotChat)',
-        mode = { 'n', 'v' },
-      },
-      {
-        '<leader>ax',
-        function()
-          return require('CopilotChat').reset()
-        end,
-        desc = 'Clear (CopilotChat)',
-        mode = { 'n', 'v' },
-      },
-      {
-        '<leader>aq',
-        function()
-          vim.ui.input({
-            prompt = 'Quick Chat: ',
-          }, function(input)
-            if input ~= '' then
-              require('CopilotChat').ask(input)
-            end
-          end)
-        end,
-        desc = 'Quick Chat (CopilotChat)',
-        mode = { 'n', 'v' },
-      },
-      {
-        '<leader>ap',
-        function()
-          require('CopilotChat').select_prompt()
-        end,
-        desc = 'Prompt Actions (CopilotChat)',
-        mode = { 'n', 'v' },
-      },
+      { '<c-s>',      '<CR>',                                ft = 'copilot-chat',              desc = 'Submit Prompt', remap = true },
+      { '<leader>a',  '',                                    desc = '+AI' },
+      { '<leader>aa', '<cmd>CopilotChatToggle<CR>',          desc = 'Toggle chat' },
+      { '<leader>ax', '<cmd>CopilotChatReset<CR>',           desc = 'Reset chat' },
+      { '<leader>at', '<cmd>CopilotChatTests<CR>',           desc = 'Unit tests for selection' },
+      { '<leader>ac', '<cmd>CopilotChatCommit<CR>',          desc = 'Generate commit msg' },
+      { '<leader>ar', '<cmd>CopilotChatRustIdiomatic<CR>',   desc = 'Rust idiomatic' },
+      { '<leader>ag', '<cmd>CopilotChatGoIdiomatic<CR>',     desc = 'Go idiomatic' },
+      { '<leader>as', '<cmd>CopilotChatCSharpIdiomatic<CR>', desc = 'C# idiomatic' },
+      { '<leader>ap', '<cmd>CopilotChatPrompts<CR>',         desc = 'All prompts' },
     },
+
+    -- final setup
     config = function(_, opts)
-      local chat = require 'CopilotChat'
-
-      vim.api.nvim_create_autocmd('BufEnter', {
-        pattern = 'copilot-chat',
-        callback = function()
-          vim.opt_local.relativenumber = false
-          vim.opt_local.number = false
-        end,
-      })
-
-      chat.setup(opts)
+      -- older NVim needs popup in completeopt for chat completion
+      vim.opt.completeopt:append 'popup'
+      require('CopilotChat').setup(opts)
     end,
   },
   {
@@ -1786,11 +2190,39 @@ require('lazy').setup({
     build = ':lua require("go.install").update_all_sync()', -- if you need to install/update all binaries
   },
 
+  -- {
+  --   'Hoffs/omnisharp-extended-lsp.nvim',
+  --   ft = 'cs',
+  --   dependencies = { 'williamboman/mason-lspconfig.nvim' },
+  -- },
   {
-    'Hoffs/omnisharp-extended-lsp.nvim',
-    ft = 'cs',
-    dependencies = { 'williamboman/mason-lspconfig.nvim' },
+    'ray-x/aurora',
+    init = function()
+      vim.g.aurora_italic = 1
+      vim.g.aurora_transparent = 1
+      vim.g.aurora_bold = 1
+    end,
+    config = function()
+      vim.cmd.colorscheme 'aurora'
+      -- override defaults
+      vim.api.nvim_set_hl(0, '@number', { fg = '#e933e3' })
+    end,
   },
+  {
+    'mfussenegger/nvim-dap',
+    event = 'VeryLazy', -- or 'BufReadPost'
+    dependencies = {
+      {
+        'mason-org/mason.nvim',
+        opts = { ensure_installed = { 'delve' } },
+      },
+      {
+        'leoluz/nvim-dap-go',
+        opts = {},
+      },
+    },
+  },
+  { 'rcarriga/nvim-dap-ui',     dependencies = { 'mfussenegger/nvim-dap', 'nvim-neotest/nvim-nio' } },
 }, {
   ui = {
     -- If you are using a Nerd Font: set icons to an empty table which will use the
@@ -1812,6 +2244,38 @@ require('lazy').setup({
     },
   },
 })
+
+-- === Go Debugger Keymaps ===
+-- Step 1: require dap and go.dap
+local dap = require 'dap'
+local widgets = require 'dap.ui.widgets'
+local godap = require 'go.dap'
+
+-- Step 2: keybindings
+vim.keymap.set('n', '<F5>', function()
+  godap.run()
+end, { desc = 'Debug Go file' })
+vim.keymap.set('n', '<F9>', function()
+  dap.toggle_breakpoint()
+end, { desc = 'Toggle Breakpoint' })
+vim.keymap.set('n', '<F10>', dap.step_over, { desc = 'Step Over' })
+vim.keymap.set('n', '<F11>', dap.step_into, { desc = 'Step Into' })
+vim.keymap.set('n', '<F12>', dap.step_out, { desc = 'Step Out' })
+
+vim.keymap.set('n', '<Leader>dt', function()
+  godap.debug_test()
+end, { desc = 'Debug Go Test' })
+vim.keymap.set('n', '<Leader>dl', function()
+  godap.debug_last()
+end, { desc = 'Debug Last Test' })
+
+-- Optional UI widgets
+vim.keymap.set('n', '<Leader>di', widgets.hover, { desc = 'Inspect Variable' })
+vim.keymap.set('n', '<Leader>ds', function()
+  widgets.sidebar(widgets.scopes).open()
+end, { desc = 'DAP Scopes Sidebar' })
+
+-- === End Go Debugger Keymaps ===
 
 -- The line beneath this is called `modeline`. See `:help modeline`
 -- vim: ts=2 sts=2 sw=2 et
